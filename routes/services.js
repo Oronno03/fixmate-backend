@@ -86,7 +86,6 @@ export default function serviceRoutes(db) {
         ...serviceData,
         technicianName: req.user.name,
         technicianEmail: req.user.email,
-        technicianId: req.user._id,
         approvalStatus: "pending",
         isAvailable: true,
         createdAt: new Date(),
