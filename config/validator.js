@@ -1,5 +1,7 @@
 import z from "zod";
 
+export const approvalStatusSchema = z.enum(["pending", "approved", "rejected"]);
+
 export const servicesSchema = z.object({
     title: z.string(),
     category: z.string(),

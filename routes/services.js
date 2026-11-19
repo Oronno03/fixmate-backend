@@ -1,5 +1,5 @@
 import express from "express";
-import { servicesSchema } from "../config/validator.js";
+import { approvalStatusSchema, servicesSchema } from "../config/validator.js";
 import z from "zod";
 import { Db, ObjectId } from "mongodb";
 import { verifySession } from "../middleware/auth.js";
@@ -113,6 +113,7 @@ export default function serviceRoutes(db) {
 
         return res.status(400).json({
           message: "Invalid data.",
+          error: err,
         });
       }
 
@@ -120,6 +121,7 @@ export default function serviceRoutes(db) {
 
       return res.status(500).json({
         message: "Failed to update service.",
+        error: err,
       });
     }
   });
@@ -132,13 +134,61 @@ export default function serviceRoutes(db) {
         _id: new ObjectId(id),
       });
       if (!deleted) {
-        return res.status(400).json({message: "Invalid ID"});
+        return res.status(400).json({ message: "Invalid ID" });
       }
       return res
         .status(200)
         .json({ message: "Successfully deleted the service." });
     } catch (err) {
-      return res.status(400).json({message: "Invalid ID"});
+      return res.status(500).json({ message: "An error occurred", error: err });
+    }
+  });
+
+  router.patch("/:id/status", async (req, res) => {
+    const id = req.params.id;
+    const body = req.body;
+    try {
+      if (!body.approvalStatus) {
+        return res
+          .status(400)
+          .json({ message: "Approval status not provided" });
+      }
+
+      const result = approvalStatusSchema.safeParse(body.approvalStatus);
+
+      if (!result.success) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid approval status. Only pending, approved or rejected is allowed.",
+          });
+      }
+
+      const updated = await services.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            ...body,
+          },
+        },
+        {
+          returnDocument: "after",
+        },
+      );
+
+      if (!updated) {
+        throw Error("Could not update the service status");
+      }
+
+      return res.status(200).json({
+        message: "Successfully updated the service status",
+        service: updated,
+      });
+    } catch (err) {
+      return res
+        .status(500)
+        .json({ message: "An error occurred.", error: err });
     }
   });
 
