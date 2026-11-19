@@ -7,7 +7,7 @@ export const servicesSchema = z.object({
     category: z.string(),
     description: z.string(),
     image: z.string(),
-    basePrice: z.string(),
+    basePrice: z.number(),
     estimatedDuration: z.string(),
     serviceMode: z.string(),
     serviceArea: z.string(),

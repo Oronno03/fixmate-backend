@@ -58,7 +58,7 @@ export default function serviceRoutes(db) {
     } catch (error) {
       if (error instanceof z.ZodError) {
         console.dir("Invalid data", error);
-        res.status(400).json("Invalid Data");
+        res.status(400).json({message: "Invalid Data", error: error});
       } else {
         console.dir("Unexpected error", error);
       }
