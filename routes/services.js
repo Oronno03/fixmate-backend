@@ -15,9 +15,47 @@ export default function serviceRoutes(db) {
 
   router.get("/", async (req, res) => {
     try {
-      const result = await services
-        .find({ approvalStatus: "approved" })
-        .toArray();
+      const { title, category, minPrice, maxPrice, sort } = req.query;
+      const query = { approvalStatus: "approved" };
+
+      if (title) {
+        query.title = {
+          $regex: title,
+          $options: "i",
+        };
+      }
+
+      if (category) {
+        query.category = category;
+      }
+
+      if (minPrice || maxPrice) {
+        query.basePrice = {};
+
+        if (minPrice) {
+          query.basePrice.$gte = Number(minPrice);
+        }
+        if (maxPrice) {
+          query.basePrice.$lte = Number(maxPrice);
+        }
+      }
+
+      // Sorting
+      let sortOption = {};
+
+      if (sort === "price_asc") {
+        sortOption.basePrice = 1;
+      } else if (sort === "price_desc") {
+        sortOption.basePrice = -1;
+      } else if (sort === "name_asc") {
+        sortOption.title = 1;
+      } else if (sort === "name_desc") {
+        sortOption.title = -1;
+      } else {
+        sortOption.createdAt = -1;
+      }
+
+      const result = await services.find(query).sort(sortOption).toArray();
       return res.status(200).send(result);
     } catch (error) {
       console.error(error);
@@ -29,8 +67,7 @@ export default function serviceRoutes(db) {
 
   router.get("/admin", async (req, res) => {
     try {
-      const result = await services.find()
-        .toArray();
+      const result = await services.find().toArray();
       return res.status(200).send(result);
     } catch (error) {
       console.error(error);
@@ -58,7 +95,7 @@ export default function serviceRoutes(db) {
     } catch (error) {
       if (error instanceof z.ZodError) {
         console.dir("Invalid data", error);
-        res.status(400).json({message: "Invalid Data", error: error});
+        res.status(400).json({ message: "Invalid Data", error: error });
       } else {
         console.dir("Unexpected error", error);
       }
@@ -170,12 +207,10 @@ export default function serviceRoutes(db) {
       const result = approvalStatusSchema.safeParse(body.approvalStatus);
 
       if (!result.success) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Invalid approval status. Only pending, approved or rejected is allowed.",
-          });
+        return res.status(400).json({
+          message:
+            "Invalid approval status. Only pending, approved or rejected is allowed.",
+        });
       }
 
       const updated = await services.findOneAndUpdate(
