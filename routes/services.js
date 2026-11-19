@@ -27,6 +27,19 @@ export default function serviceRoutes(db) {
     }
   });
 
+  router.get("/admin", async (req, res) => {
+    try {
+      const result = await services.find()
+        .toArray();
+      return res.status(200).send(result);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).send({
+        message: "Failed to fetch services.",
+      });
+    }
+  });
+
   router.post("/", verifySession(db), async (req, res) => {
     const body = await req.body;
 
