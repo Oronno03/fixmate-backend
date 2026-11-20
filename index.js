@@ -4,6 +4,7 @@ dotenv.config();
 import { connectToMongoDB } from "./config/db.js";
 import cors from "cors";
 import serviceRoutes from "./routes/services.js";
+import bookingRoutes from "./routes/bookings.js";
 
 const app = express();
 const client = await connectToMongoDB();
@@ -18,6 +19,7 @@ app.get("/", (req, res) => {
 })
 
 app.use("/services", serviceRoutes(db));
+app.use("/bookings", bookingRoutes(db));
 
 app.listen(5000);
 console.log("App is running on port: 5000");
