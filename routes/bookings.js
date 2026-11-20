@@ -20,11 +20,9 @@ export default function bookingRoutes(db) {
         .status(200)
         .json({ message: "Successfully got the bookings", bookings: data });
     else
-      return res
-        .status(500)
-        .json({
-          message: "Couldn't retrieve the bookings, please try again later.",
-        });
+      return res.status(500).json({
+        message: "Couldn't retrieve the bookings, please try again later.",
+      });
   });
 
   router.get("/:id", verifySession(db), async (req, res) => {
@@ -41,6 +39,92 @@ export default function bookingRoutes(db) {
         message: "Successfully retrieved the booking",
         booking,
       });
+    } catch (err) {
+      return res
+        .status(400)
+        .json({ message: "Some error occurred", error: err });
+    }
+  });
+
+  router.patch("/:id", verifySession(db), async (req, res) => {
+    const id = req.params.id;
+    try {
+      const booking = await bookings.findOne({ _id: new ObjectId(id) });
+      if (!booking)
+        return res
+          .status(404)
+          .json({ message: "No booking found with that id" });
+
+      let { status: nextStatus } = req.body;
+
+      if (!nextStatus) {
+        return res.status(400).json({ message: "Status has to be provided" });
+      }
+
+      if (booking.status === "requested") {
+        if (!["accepted", "rejected", "cancelled"].includes(nextStatus)) {
+          return res
+            .status(400)
+            .json({ message: "Invalid transition of the status." });
+        }
+      } else if (booking.status === "accepted") {
+        if (nextStatus !== "in-progress") {
+          return res
+            .status(400)
+            .json({ message: "Invalid transition of the status." });
+        }
+      } else if (booking.status === "in-progress") {
+        if (nextStatus !== "completed") {
+          return res
+            .status(400)
+            .json({ message: "Invalid transition of the status." });
+        }
+        if (
+          typeof req.body.finalAmount !== "number" ||
+          req.body.finalAmount < 0
+        ) {
+          return res
+            .status(400)
+            .json({ message: "Completion requires the final amount." });
+        }
+      } else if (
+        booking.status === "cancelled" ||
+        booking.status === "rejected" ||
+        booking.status === "completed"
+      ) {
+        return res
+          .status(400)
+          .json({ message: "This booking can no longer be changed." });
+      } else {
+        return res
+          .status(500)
+          .json({ message: "Unknown status found. Server side error." });
+      }
+
+      const updateData = {
+        status: nextStatus,
+      };
+
+      if (nextStatus === "completed") {
+        updateData.finalAmount = req.body.finalAmount;
+      }
+
+      const updated = await bookings.findOneAndUpdate(
+        { _id: new ObjectId(booking._id) },
+        {
+          $set: updateData,
+        },
+        {
+          returnDocument: "after",
+        },
+      );
+
+      return res
+        .status(200)
+        .json({
+          message: "Successfully updated the booking.",
+          booking: updated,
+        });
     } catch (err) {
       return res
         .status(400)
