@@ -2,7 +2,11 @@ import express from "express";
 import { approvalStatusSchema, servicesSchema } from "../config/validator.js";
 import z from "zod";
 import { Db, ObjectId } from "mongodb";
-import { verifySession } from "../middleware/auth.js";
+import {
+  verifyAdmin,
+  verifySession,
+  verifyTechnician,
+} from "../middleware/auth.js";
 
 /**
  *
@@ -65,7 +69,7 @@ export default function serviceRoutes(db) {
     }
   });
 
-  router.get("/admin", async (req, res) => {
+  router.get("/admin", verifySession(db), verifyAdmin, async (req, res) => {
     try {
       const result = await services.find().toArray();
       return res.status(200).send(result);
@@ -77,7 +81,7 @@ export default function serviceRoutes(db) {
     }
   });
 
-  router.post("/", verifySession(db), async (req, res) => {
+  router.post("/", verifySession(db), verifyTechnician, async (req, res) => {
     const body = await req.body;
 
     try {
@@ -125,119 +129,157 @@ export default function serviceRoutes(db) {
     }
   });
 
-  router.patch("/:id", async (req, res) => {
-    const id = req.params.id;
-    const body = req.body;
+  router.patch(
+    "/:id",
+    verifySession(db),
+    verifyTechnician,
+    async (req, res) => {
+      const id = req.params.id;
+      const body = req.body;
 
-    try {
-      const data = servicesSchema.parse(body);
+      try {
+        const data = servicesSchema.safeParse(body);
 
-      const updated = await services.findOneAndUpdate(
-        {
-          _id: new ObjectId(id),
-        },
-        {
-          $set: {
-            ...data,
+        const service = await services.findOne({ _id: new ObjectId(id) });
+
+        if (!service) {
+          return res.status(404).json({
+            message: "No service found with that id.",
+          });
+        }
+
+        if (service.technicianEmail !== req.user.email) {
+          return res
+            .status(403)
+            .json({ message: "You don't own this service." });
+        }
+
+        const updated = await services.findOneAndUpdate(
+          {
+            _id: new ObjectId(id),
           },
-        },
-        {
-          returnDocument: "after",
-        },
-      );
+          {
+            $set: {
+              ...data,
+            },
+          },
+          {
+            returnDocument: "after",
+          },
+        );
 
-      if (!updated) {
-        return res.status(404).json({
-          message: "Invalid ID. No service found.",
+        if (!updated) {
+          return res.status(404).json({
+            message: "Invalid ID. No service found.",
+          });
+        }
+
+        return res.status(200).json({
+          message: "Service updated successfully.",
+          service: updated,
         });
-      }
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          console.dir(err);
 
-      return res.status(200).json({
-        message: "Service updated successfully.",
-        service: updated,
-      });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        console.dir(err);
+          return res.status(400).json({
+            message: "Invalid data.",
+            error: err,
+          });
+        }
 
-        return res.status(400).json({
-          message: "Invalid data.",
+        console.error(err);
+
+        return res.status(500).json({
+          message: "Failed to update service.",
           error: err,
         });
       }
+    },
+  );
 
-      console.error(err);
+  router.delete(
+    "/:id",
+    verifySession(db),
+    verifyTechnician,
+    async (req, res) => {
+      const id = req.params.id;
 
-      return res.status(500).json({
-        message: "Failed to update service.",
-        error: err,
-      });
-    }
-  });
+      try {
+        const service = await services.findOne({ _id: new ObjectId(id) });
 
-  router.delete("/:id", async (req, res) => {
-    const id = req.params.id;
+        if (!service) {
+          return res.status(404).json({
+            message: "No service found with that id.",
+          });
+        }
 
-    try {
-      const deleted = await services.findOneAndDelete({
-        _id: new ObjectId(id),
-      });
-      if (!deleted) {
-        return res.status(400).json({ message: "Invalid ID" });
-      }
-      return res
-        .status(200)
-        .json({ message: "Successfully deleted the service." });
-    } catch (err) {
-      return res.status(500).json({ message: "An error occurred", error: err });
-    }
-  });
+        if (service.technicianEmail !== req.user.email) {
+          return res
+            .status(403)
+            .json({ message: "You don't own this service." });
+        }
 
-  router.patch("/:id/status", async (req, res) => {
-    const id = req.params.id;
-    const body = req.body;
-    try {
-      if (!body.approvalStatus) {
-        return res
-          .status(400)
-          .json({ message: "Approval status not provided" });
-      }
-
-      const result = approvalStatusSchema.safeParse(body.approvalStatus);
-
-      if (!result.success) {
-        return res.status(400).json({
-          message:
-            "Invalid approval status. Only pending, approved or rejected is allowed.",
+        const deleted = await services.findOneAndDelete({
+          _id: new ObjectId(id),
         });
+        if (!deleted) {
+          return res.status(400).json({ message: "Invalid ID" });
+        }
+        return res
+          .status(200)
+          .json({ message: "Successfully deleted the service." });
+      } catch (err) {
+        return res
+          .status(500)
+          .json({ message: "An error occurred", error: err });
       }
+    },
+  );
 
-      const updated = await services.findOneAndUpdate(
-        { _id: new ObjectId(id) },
-        {
-          $set: {
-            ...body,
+  router.patch(
+    "/:id/status",
+    verifySession(db),
+    verifyAdmin,
+    async (req, res) => {
+      const id = req.params.id;
+      const body = req.body;
+      try {
+        if (!body.approvalStatus) {
+          return res
+            .status(400)
+            .json({ message: "Approval status not provided" });
+        }
+
+        const result = approvalStatusSchema.parse(body.approvalStatus);
+
+        const updated = await services.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              approvalStatus: result,
+            },
           },
-        },
-        {
-          returnDocument: "after",
-        },
-      );
+          {
+            returnDocument: "after",
+          },
+        );
 
-      if (!updated) {
-        throw Error("Could not update the service status");
+        if (!updated) {
+          throw Error("Could not update the service status");
+        }
+
+        return res.status(200).json({
+          message: "Successfully updated the service status",
+          service: updated,
+        });
+      } catch (err) {
+        return res
+          .status(500)
+          .json({ message: "An error occurred.", error: err });
       }
-
-      return res.status(200).json({
-        message: "Successfully updated the service status",
-        service: updated,
-      });
-    } catch (err) {
-      return res
-        .status(500)
-        .json({ message: "An error occurred.", error: err });
-    }
-  });
+    },
+  );
 
   return router;
 }

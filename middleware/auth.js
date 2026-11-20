@@ -45,3 +45,33 @@ export const verifySession =
     req.user = user;
     next();
   };
+
+export const verifyCustomer = (req, res, next) => {
+  if (req.user.role !== "customer") {
+    return res.status(403).json({
+      message: "Customer access required.",
+    });
+  }
+
+  next();
+};
+
+export const verifyTechnician = (req, res, next) => {
+  if (req.user.role !== "technician") {
+    return res.status(403).json({
+      message: "Technician access required.",
+    });
+  }
+
+  next();
+};
+
+export const verifyAdmin = (req, res, next) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      message: "Admin access required.",
+    });
+  }
+
+  next();
+};

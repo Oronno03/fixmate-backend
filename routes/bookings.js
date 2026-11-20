@@ -1,6 +1,6 @@
 import express from "express";
 import { Db, ObjectId } from "mongodb";
-import { verifySession } from "../middleware/auth.js";
+import { verifyCustomer, verifySession } from "../middleware/auth.js";
 import z from "zod";
 import { bookingSchema, paymentStatus } from "../config/validator.js";
 
@@ -132,7 +132,7 @@ export default function bookingRoutes(db) {
     }
   });
 
-  router.post("/", verifySession(db), async (req, res) => {
+  router.post("/", verifySession(db), verifyCustomer, async (req, res) => {
     const body = req.body;
 
     try {
