@@ -180,7 +180,6 @@ export default function paymentRoutes(db) {
 
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
-        payment_method_types: ["card"],
         customer_email: req.user.email,
         client_reference_id: parsed.data.bookingId,
         line_items: [
