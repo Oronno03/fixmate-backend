@@ -56,6 +56,8 @@ export const serviceQuerySchema = z
     minPrice: z.coerce.number().nonnegative().optional(),
     maxPrice: z.coerce.number().nonnegative().optional(),
     sort: z.enum(["price_asc", "price_desc", "newest"]).optional().default("newest"),
+    page: z.coerce.number().int().positive().optional().default(1),
+    pageSize: z.coerce.number().int().positive().max(48).optional(),
     limit: z.coerce.number().int().positive().max(50).optional(),
   })
   .refine(
@@ -127,6 +129,11 @@ export const availabilityUpdateSchema = z.object({
 
 export const paymentCreateSchema = z.object({
   bookingId: objectIdString,
+});
+
+export const reviewCreateSchema = z.object({
+  rating: z.coerce.number().int().min(1).max(5),
+  review: z.string().trim().min(3).max(1000),
 });
 
 export const uploadSchema = z.object({

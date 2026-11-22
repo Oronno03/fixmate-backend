@@ -33,6 +33,30 @@ function daysAgo(days) {
   return date;
 }
 
+function hoursAfter(date, hours) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function buildStatusHistory(status, createdAt) {
+  if (status === "requested") {
+    return [{ status: "requested", changedAt: createdAt }];
+  }
+
+  if (status === "cancelled" || status === "rejected") {
+    return [
+      { status: "requested", changedAt: createdAt },
+      { status, changedAt: hoursAfter(createdAt, 3) },
+    ];
+  }
+
+  const steps = ["requested", "accepted", "in-progress", "completed"];
+  const lastIndex = steps.indexOf(status);
+  return steps.slice(0, lastIndex + 1).map((step, index) => ({
+    status: step,
+    changedAt: hoursAfter(createdAt, index * 4),
+  }));
+}
+
 async function upsertUser(db, user, password) {
   const users = db.collection("user");
   const accounts = db.collection("account");
@@ -81,6 +105,7 @@ const technicians = {
     name: "Rahim Uddin",
     email: "rahim@fixmate.com",
     role: "technician",
+    plan: "pro",
     phone: "01711000001",
     area: "Mirpur, Dhaka",
     bio: "Senior appliance technician with 8 years of experience in AC, refrigerator and washing machine repair.",
@@ -90,6 +115,7 @@ const technicians = {
     name: "Karim Hasan",
     email: "karim@fixmate.com",
     role: "technician",
+    plan: "free",
     phone: "01711000002",
     area: "Dhanmondi, Dhaka",
     bio: "Smartphone and laptop repair specialist. Certified in board-level diagnostics and screen replacement.",
@@ -307,6 +333,7 @@ async function main() {
       name: "FixMate Admin",
       email: "admin@fixmate.com",
       role: "admin",
+      plan: "free",
       phone: "01711000000",
       area: "Dhaka, Bangladesh",
       bio: "Platform administrator for FixMate.",
@@ -321,6 +348,7 @@ async function main() {
       name: "Nusrat Jahan",
       email: "customer@fixmate.com",
       role: "customer",
+      plan: "free",
       phone: "01711000003",
       area: "Uttara, Dhaka",
       bio: "Homeowner who loves keeping her appliances in top shape.",
@@ -356,6 +384,8 @@ async function main() {
       technicianEmail: technician.email,
       approvalStatus: "approved",
       isAvailable: true,
+      ratingAverage: 0,
+      ratingCount: 0,
       createdAt: daysAgo(template.days),
       updatedAt: daysAgo(template.days),
     };
@@ -392,7 +422,15 @@ async function main() {
     { service: serviceIds[1], status: "accepted", paymentStatus: "unpaid", days: 2 },
     { service: serviceIds[2], status: "in-progress", paymentStatus: "unpaid", days: 3 },
     { service: serviceIds[3], status: "completed", paymentStatus: "unpaid", days: 4 },
-    { service: serviceIds[4], status: "completed", paymentStatus: "paid", days: 5 },
+    {
+      service: serviceIds[4],
+      status: "completed",
+      paymentStatus: "paid",
+      days: 5,
+      rating: 5,
+      review:
+        "Karim diagnosed the panel fault quickly and had the TV working the same day. Clear pricing and very tidy work.",
+    },
     { service: serviceIds[5], status: "rejected", paymentStatus: "unpaid", days: 6 },
     { service: serviceIds[6], status: "cancelled", paymentStatus: "unpaid", days: 7 },
   ];
@@ -416,8 +454,14 @@ async function main() {
       problemDescription:
         "The appliance has been having this problem for a few days and needs a professional inspection.",
       status: plan.status,
+      statusHistory: buildStatusHistory(plan.status, createdAt),
       finalAmount: plan.status === "completed" ? service.basePrice + 10 : service.basePrice,
       paymentStatus: plan.paymentStatus,
+      rating: plan.rating ?? null,
+      review: plan.review ?? null,
+      reviewedAt: plan.rating ? daysAgo(plan.days - 1) : null,
+      paidAt:
+        plan.paymentStatus === "paid" ? daysAgo(plan.days - 1) : null,
       createdAt,
       updatedAt: createdAt,
     };
@@ -460,7 +504,33 @@ async function main() {
     }
   }
 
+  const ratings = await bookings
+    .aggregate([
+      { $match: { rating: { $type: "number" } } },
+      {
+        $group: {
+          _id: "$serviceId",
+          average: { $avg: "$rating" },
+          count: { $sum: 1 },
+        },
+      },
+    ])
+    .toArray();
+
+  for (const rating of ratings) {
+    await services.updateOne(
+      { _id: new ObjectId(rating._id) },
+      {
+        $set: {
+          ratingAverage: Math.round(rating.average * 10) / 10,
+          ratingCount: rating.count,
+        },
+      },
+    );
+  }
+
   console.log(`Seeded ${bookingPlan.length} bookings and payment records.`);
+  console.log(`Updated ratings for ${ratings.length} services.`);
   console.log("Seed complete.");
   console.log("Admin: admin@fixmate.com / Admin@123");
   console.log("Technician: rahim@fixmate.com / Tech@123");

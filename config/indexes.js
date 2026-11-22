@@ -12,6 +12,7 @@ export async function ensureIndexes(db) {
     ["bookings", { customerEmail: 1, status: 1 }],
     ["bookings", { technicianEmail: 1, status: 1 }],
     ["bookings", { customerEmail: 1, serviceId: 1, status: 1 }],
+    ["bookings", { serviceId: 1, rating: 1 }],
     ["bookings", { createdAt: -1 }],
     ["payments", { stripeSessionId: 1 }, { unique: true }],
     ["payments", { bookingId: 1 }, { unique: true }],

@@ -19,7 +19,7 @@ export function toObjectId(id) {
 export function sanitizeUser(user) {
   if (!user) return null;
   const { password, ...safe } = user;
-  return safe;
+  return { ...safe, plan: user.plan === "pro" ? "pro" : "free" };
 }
 
 /**

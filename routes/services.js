@@ -15,6 +15,35 @@ import { escapeRegex, toObjectId } from "../utils/helpers.js";
 export default function serviceRoutes(db) {
   const router = express.Router();
   const services = db.collection("services");
+  const users = db.collection("user");
+
+  async function plansForServices(items) {
+    const emails = [...new Set(items.map((item) => item.technicianEmail))];
+    if (emails.length === 0) return new Map();
+
+    const technicians = await users
+      .find(
+        { email: { $in: emails } },
+        { projection: { email: 1, plan: 1 } },
+      )
+      .toArray();
+
+    return new Map(
+      technicians.map((technician) => [
+        technician.email,
+        technician.plan === "pro" ? "pro" : "free",
+      ]),
+    );
+  }
+
+  function decorateService(service, plans) {
+    return {
+      ...service,
+      ratingAverage: Number(service.ratingAverage) || 0,
+      ratingCount: Number(service.ratingCount) || 0,
+      technicianPlan: plans.get(service.technicianEmail) ?? "free",
+    };
+  }
 
   router.get(
     "/",
@@ -27,8 +56,20 @@ export default function serviceRoutes(db) {
         });
       }
 
-      const { search, category, serviceMode, minPrice, maxPrice, sort, limit } =
-        parsed.data;
+      const {
+        search,
+        category,
+        serviceMode,
+        minPrice,
+        maxPrice,
+        sort,
+        page,
+        pageSize: requestedPageSize,
+        limit,
+      } = parsed.data;
+
+      const pageSize = limit ?? requestedPageSize ?? 12;
+      const currentPage = Math.max(1, page);
 
       const query = {
         approvalStatus: "approved",
@@ -56,11 +97,29 @@ export default function serviceRoutes(db) {
             ? { basePrice: -1 }
             : { createdAt: -1 };
 
-      let cursor = services.find(query).sort(sortOption);
-      if (limit) cursor = cursor.limit(limit);
+      const total = await services.countDocuments(query);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-      const data = await cursor.toArray();
-      return res.status(200).json({ data });
+      const data = await services
+        .find(query)
+        .sort(sortOption)
+        .skip((currentPage - 1) * pageSize)
+        .limit(pageSize)
+        .toArray();
+
+      const plans = await plansForServices(data);
+
+      return res.status(200).json({
+        data: data.map((service) => decorateService(service, plans)),
+        pagination: {
+          page: currentPage,
+          pageSize,
+          total,
+          totalPages,
+          hasNext: currentPage < totalPages,
+          hasPrev: currentPage > 1,
+        },
+      });
     }),
   );
 
@@ -74,7 +133,11 @@ export default function serviceRoutes(db) {
         .sort({ createdAt: -1 })
         .toArray();
 
-      return res.status(200).json({ data });
+      const plans = await plansForServices(data);
+
+      return res.status(200).json({
+        data: data.map((service) => decorateService(service, plans)),
+      });
     }),
   );
 
@@ -96,7 +159,10 @@ export default function serviceRoutes(db) {
         return res.status(404).json({ message: "Service not found." });
       }
 
-      return res.status(200).json({ data: service });
+      const plans = await plansForServices([service]);
+      return res
+        .status(200)
+        .json({ data: decorateService(service, plans) });
     }),
   );
 
@@ -113,6 +179,19 @@ export default function serviceRoutes(db) {
         });
       }
 
+      if (req.user.plan !== "pro") {
+        const listed = await services.countDocuments({
+          technicianEmail: req.user.email,
+        });
+
+        if (listed >= 3) {
+          return res.status(403).json({
+            message:
+              "The free plan allows up to 3 services. Upgrade to FixMate Pro for unlimited listings.",
+          });
+        }
+      }
+
       const now = new Date();
       const service = {
         ...parsed.data,
@@ -120,6 +199,8 @@ export default function serviceRoutes(db) {
         technicianEmail: req.user.email,
         approvalStatus: "pending",
         isAvailable: true,
+        ratingAverage: 0,
+        ratingCount: 0,
         createdAt: now,
         updatedAt: now,
       };

@@ -9,6 +9,7 @@ import {
   bookingCreateSchema,
   bookingStatus,
   bookingStatusUpdateSchema,
+  reviewCreateSchema,
 } from "../config/validator.js";
 import { toObjectId } from "../utils/helpers.js";
 
@@ -153,8 +154,12 @@ export default function bookingRoutes(db) {
         preferredDate,
         problemDescription,
         status: "requested",
+        statusHistory: [{ status: "requested", changedAt: now }],
         finalAmount: service.basePrice,
         paymentStatus: "unpaid",
+        rating: null,
+        review: null,
+        reviewedAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -195,9 +200,15 @@ export default function bookingRoutes(db) {
         });
       }
 
+      const changedAt = new Date();
       const updated = await bookings.findOneAndUpdate(
         { _id, status: "requested" },
-        { $set: { status: "cancelled", updatedAt: new Date() } },
+        {
+          $set: { status: "cancelled", updatedAt: changedAt },
+          $push: {
+            statusHistory: { status: "cancelled", changedAt },
+          },
+        },
         { returnDocument: "after" },
       );
 
@@ -262,12 +273,18 @@ export default function bookingRoutes(db) {
         });
       }
 
-      const update = { status: nextStatus, updatedAt: new Date() };
+      const changedAt = new Date();
+      const update = { status: nextStatus, updatedAt: changedAt };
       if (nextStatus === "completed") update.finalAmount = finalAmount;
 
       const updated = await bookings.findOneAndUpdate(
         { _id, status: booking.status },
-        { $set: update },
+        {
+          $set: update,
+          $push: {
+            statusHistory: { status: nextStatus, changedAt },
+          },
+        },
         { returnDocument: "after" },
       );
 
@@ -280,6 +297,104 @@ export default function bookingRoutes(db) {
       return res
         .status(200)
         .json({ data: updated, message: `Booking marked ${nextStatus}.` });
+    }),
+  );
+
+  router.post(
+    "/:id/review",
+    verifyToken(db),
+    verifyCustomer,
+    asyncHandler(async (req, res) => {
+      const _id = toObjectId(req.params.id);
+      if (!_id) {
+        return res.status(400).json({ message: "Invalid booking id." });
+      }
+
+      const parsed = reviewCreateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: "Invalid review.",
+          issues: parsed.error.issues,
+        });
+      }
+
+      const booking = await bookings.findOne({ _id });
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found." });
+      }
+
+      if (booking.customerEmail !== req.user.email) {
+        return res
+          .status(403)
+          .json({ message: "You do not own this booking." });
+      }
+
+      if (booking.status !== "completed" || booking.paymentStatus !== "paid") {
+        return res.status(400).json({
+          message: "You can review a job after it is completed and paid.",
+        });
+      }
+
+      if (typeof booking.rating === "number") {
+        return res
+          .status(409)
+          .json({ message: "You have already reviewed this booking." });
+      }
+
+      const reviewedAt = new Date();
+      const updated = await bookings.findOneAndUpdate(
+        { _id, rating: null },
+        {
+          $set: {
+            rating: parsed.data.rating,
+            review: parsed.data.review,
+            reviewedAt,
+            updatedAt: reviewedAt,
+          },
+        },
+        { returnDocument: "after" },
+      );
+
+      if (!updated) {
+        return res
+          .status(409)
+          .json({ message: "This booking has already been reviewed." });
+      }
+
+      const [aggregate] = await bookings
+        .aggregate([
+          {
+            $match: {
+              serviceId: booking.serviceId,
+              rating: { $type: "number" },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              average: { $avg: "$rating" },
+              count: { $sum: 1 },
+            },
+          },
+        ])
+        .toArray();
+
+      await services.updateOne(
+        { _id: toObjectId(booking.serviceId) },
+        {
+          $set: {
+            ratingAverage: aggregate
+              ? Math.round(aggregate.average * 10) / 10
+              : 0,
+            ratingCount: aggregate?.count ?? 0,
+            updatedAt: reviewedAt,
+          },
+        },
+      );
+
+      return res
+        .status(201)
+        .json({ data: updated, message: "Thanks for your review." });
     }),
   );
 
