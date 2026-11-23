@@ -256,7 +256,7 @@ const serviceTemplates = [
     description:
       "Refrigerant top-up with leak detection and pressure testing for split and window air conditioners.",
     image:
-      "https://images.unsplash.com/photo-1631545806609-25a4e5f0b1c0?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1792799888905-8696bd32a11a?auto=format&fit=crop&w=1200&q=80",
     basePrice: 50,
     estimatedDuration: "2-3 hours",
     serviceMode: "Home Visit",
